@@ -3,6 +3,10 @@
 #include <time.h>
 #include <getopt.h> // gcc-only library (TODO: offer cl.exe alternative?)
 #include <stdarg.h>
+
+#include <locale.h>
+#include <wchar.h>
+
 #ifdef _WIN32 // Windows-unique preprocessor directives for compatiblity
     #ifdef _WIN32_WINNT
         #undef _WIN32_WINNT
@@ -120,6 +124,13 @@ char server_port[16] = "6000";
 char username[128];
 char identifier[128] = ""; // Default value should be empty string
 
+#define RED_COLOR      "\x1b[31m" // Errors
+#define GREEN_COLOR    "\x1b[32m" // Hashrate
+#define YELLOW_COLOR   "\x1b[33m" // Warnings
+#define MAGENTA_COLOR  "\x1b[35m" // CPU color
+#define CYAN_COLOR     "\x1b[36m" // GPU color
+#define RESET_COLOR    "\x1b[0m"
+
 // Prints log as formatted along with timestamp, newline, and four-letter code
 void print_formatted_log(const char* code, const char* format, ...){
     time_t ts_epoch = time(NULL);
@@ -156,9 +167,9 @@ void* mining_routine(void* arg){
     TIMESTAMP_T t1, t0;
     struct _thread_resources *shared_data = arg;
     if(shared_data->opencl_thread)
-        sprintf(thread_code, "gpu%d", shared_data->thread_id);
+        sprintf(thread_code, CYAN_COLOR    "gpu%d" RESET_COLOR, shared_data->thread_id);
     else
-        sprintf(thread_code, "cpu%d", shared_data->thread_id);
+        sprintf(thread_code, MAGENTA_COLOR "cpu%d" RESET_COLOR, shared_data->thread_id);
     while(1){
         unsigned int soc = socket(PF_INET, SOCK_STREAM, 0);
         SET_TIMEOUT(soc, 16);
@@ -167,13 +178,13 @@ void* mining_routine(void* arg){
         struct addrinfo *dns_result;
         len = getaddrinfo((const char*)server_address, (const char*)server_port, NULL, &dns_result);
         if(len != 0){ // Custom exit-on-failure code for DNS resolution
-            print_formatted_log(thread_code, "Error resolving server address: %s", gai_strerror(len)); 
+            print_formatted_log(thread_code, RED_COLOR "Error resolving server address: %s" RESET_COLOR, gai_strerror(len));
             goto on_error;
         }
         len = connect(soc, dns_result->ai_addr, dns_result->ai_addrlen);
         if(len == -1){ // Boilerplate exit-on-failure code
             SPRINT_SOCK_ERRNO(buf, sizeof(buf), SOCK_ERRNO); // Reusing buf to print error message
-            print_formatted_log(thread_code, "Error opening connection: %s", buf);
+            print_formatted_log(thread_code, RED_COLOR "Error opening connection: %s" RESET_COLOR, buf);
             goto on_error;
         }
         freeaddrinfo(dns_result);
@@ -182,11 +193,11 @@ void* mining_routine(void* arg){
         len = recv(soc, buf, 100, 0);
         if(len == -1){
             SPRINT_SOCK_ERRNO(buf, sizeof(buf), SOCK_ERRNO);
-            print_formatted_log(thread_code, "Error connecting: %s", buf);
+            print_formatted_log(thread_code, RED_COLOR "Error connecting: %s" RESET_COLOR, buf);
             goto on_error;
         }
         else if(len == 0){ // Boilerplate exit-on-disconnect code
-            print_formatted_log(thread_code, "Error connecting: server closed gracefully");
+            print_formatted_log(thread_code, RED_COLOR "Error connecting: server closed gracefully" RESET_COLOR);
             goto on_error;
         }
         buf[len] = 0;
@@ -199,7 +210,7 @@ void* mining_routine(void* arg){
             len = send(soc, job_request, job_request_len, 0);
             if(len == -1){
                 SPRINT_SOCK_ERRNO(buf, sizeof(buf), SOCK_ERRNO);
-                print_formatted_log(thread_code, "Error sending job request: %s", buf);
+                print_formatted_log(thread_code, RED_COLOR "Error sending job request: %s" RESET_COLOR, buf);
                 goto on_error;
             }
 
@@ -207,11 +218,11 @@ void* mining_routine(void* arg){
             len = recv(soc, buf, 128, 0);
             if(len == -1){
                 SPRINT_SOCK_ERRNO(buf, sizeof(buf), SOCK_ERRNO);
-                print_formatted_log(thread_code, "Error receiving job: %s", buf);
+                print_formatted_log(thread_code, RED_COLOR "Error receiving job: %s" RESET_COLOR, buf);
                 goto on_error;
             }
             else if(len == 0){
-                print_formatted_log(thread_code, "Error receiving job: server closed gracefully");
+                print_formatted_log(thread_code, RED_COLOR "Error receiving job: server closed gracefully" RESET_COLOR);
                 goto on_error;
             }
             buf[len] = 0;
@@ -272,7 +283,7 @@ void* mining_routine(void* arg){
                     diff = atoi((const char*) &buf[58]);
                     print_formatted_log(thread_code, "New job from %s with difficulty %d", server_address, diff);
                     if(shared_data->opencl_thread)
-                        print_formatted_log(thread_code, "WARNING: xxhash prefix detected (not supported on GPU yet), defaulting to CPU");
+                        print_formatted_log(thread_code, YELLOW_COLOR "WARNING: xxhash prefix detected (not supported on GPU yet), defaulting to CPU" RESET_COLOR);
                     // Then use the OpenSSL path with a xxhash prefix
                     nonce = mine_DUCO_S1(
                         (const unsigned char*) &buf[0],
@@ -297,7 +308,7 @@ void* mining_routine(void* arg){
             len = send(soc, buf, len, 0);
             if(len == -1){
                 SPRINT_SOCK_ERRNO(buf, sizeof(buf), SOCK_ERRNO);
-                print_formatted_log(thread_code, "Error sending result: %s", buf);
+                print_formatted_log(thread_code, RED_COLOR "Error sending result: %s" RESET_COLOR, buf);
                 goto on_error;
             }
 
@@ -305,11 +316,11 @@ void* mining_routine(void* arg){
             len = recv(soc, buf, 128, 0); // May take up to 10 seconds as of server v2.2!
             if(len == -1){
                 SPRINT_SOCK_ERRNO(buf, sizeof(buf), SOCK_ERRNO);
-                print_formatted_log(thread_code, "Error receiving feedback: %s", buf);
+                print_formatted_log(thread_code, RED_COLOR "Error receiving feedback: %s" RESET_COLOR, buf);
                 goto on_error;
             }
             else if(len == 0){ 
-                print_formatted_log(thread_code, "Error receiving feedback: server closed gracefully");
+                print_formatted_log(thread_code, RED_COLOR "Error receiving feedback: server closed gracefully" RESET_COLOR);
                 goto on_error;
             }
             buf[len] = 0;
@@ -360,7 +371,7 @@ void* ping_routine(void *arg){
         CLOSE(soc);
         // Updates server_is_online according to whether recv succeeded
         if(len == -1 || len == 0){
-            print_formatted_log("ping", "Warning pinging master server: Timed out or failed");
+            print_formatted_log("ping", YELLOW_COLOR "Warning pinging master server: Timed out or failed" RESET_COLOR);
             server_is_online = 0;
         }
         else server_is_online = 1;
@@ -377,6 +388,8 @@ int main(int argc, char **argv){
     enum Intensity diff = EXTREME;
     int opt;
     opterr = 0; // Disables default getopt error messages
+
+    setlocale(LC_ALL, "");
 
     while((opt = getopt(argc, argv, "ha:i:o:u:w:t:g")) != -1){
         switch(opt){
@@ -469,7 +482,7 @@ int main(int argc, char **argv){
         job_request_len = sprintf(job_request, "JOB,%s,%s\n", username, diff_string);
 
     printf("Initializing nonceMiner v2.1.1...\n");
-    printf("Configured with username '%s', ", username);
+    printf("Configured with username " GREEN_COLOR "'%s', " RESET_COLOR, username);
     printf("identifier '%s', ", identifier);
     printf("difficulty '%s', ", diff_string);
     printf("and %d thread(s).\n", n_threads);
@@ -502,7 +515,7 @@ int main(int argc, char **argv){
     }
     #endif
     if(using_xxhash)
-        printf("Running in xxhash mode. WARNING: Per-thread hashrates over 0.9 MH/s may be rejected.\n");
+        printf(YELLOW_COLOR "Running in xxhash mode. WARNING: Per-thread hashrates over 0.9 MH/s may be rejected.\n" RESET_COLOR);
     printf("Starting threads...\n");
 
     #ifndef NO_OPENCL
@@ -554,7 +567,7 @@ int main(int argc, char **argv){
         MUTEX_UNLOCK(&count_lock);
 
         printf("\n");
-        print_formatted_log("rprt", "Hashrate: %.2f MH/s, Accepted %d, Rejected %d", megahash, accepted_copy, rejected_copy);
+        print_formatted_log("rprt", GREEN_COLOR "Hashrate: %.2f MH/s, Accepted %d, Rejected %d" RESET_COLOR, megahash, accepted_copy, rejected_copy);
         printf("\n");
     }
 
