@@ -302,9 +302,9 @@ void* mining_routine(void* arg){
 
             // Generates and sends result string
             if(shared_data->opencl_thread)
-                len = sprintf(buf, "%ld,%d,nonceMiner v2.1.1 OpenCL,%s\n", nonce, local_hashrate, identifier);
+                len = sprintf(buf, "%ld,%d,miner,%s\n", nonce, local_hashrate, identifier);
             else
-                len = sprintf(buf, "%ld,%d,nonceMiner v2.1.1,%s\n", nonce, local_hashrate, identifier);
+                len = sprintf(buf, "%ld,%d,miner,%s\n", nonce, local_hashrate, identifier);
             len = send(soc, buf, len, 0);
             if(len == -1){
                 SPRINT_SOCK_ERRNO(buf, sizeof(buf), SOCK_ERRNO);
